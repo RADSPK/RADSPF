@@ -4502,7 +4502,7 @@ function confirmExcelImport() {
   // Force immediate cloud sync so imported data isn't overwritten on next load
   if (_cloudEnabled) {
     try {
-      const _ik = Object.keys(localStorage).find(k => k.endsWith('_pf_v3')) || 'rads_pf_v3';
+      const _ik = Object.keys(localStorage).find(k => k.endsWith('_pf_v3') && !k.startsWith('pf_cloud_url_')) || 'rads_pf_v3';
       const _id = JSON.parse(localStorage.getItem(_ik) || '{}');
       cloudSaveBulk({ [_ik]: JSON.stringify({..._id, _fullEmployees: S.employees, _savedAt: new Date().toISOString()}) });
     } catch(e) {}
@@ -8347,7 +8347,7 @@ function softResetNext() {
 async function executeSoftReset() {
   // Step 1: Write the soft-reset sentinel — initApp will start with employees
   // stripped of all month data but keeping name/code/designation/joining etc.
-  const _pfKey2 = Object.keys(localStorage).find(k => k.endsWith('_pf_v3')) || 'rads_pf_v3';
+  const _pfKey2 = Object.keys(localStorage).find(k => k.endsWith('_pf_v3') && !k.startsWith('pf_cloud_url_')) || 'rads_pf_v3';
   localStorage.setItem(_pfKey2, JSON.stringify({__softReset: true}));
 
   // Step 2: Clear all ancillary keys
@@ -8432,7 +8432,7 @@ function hardResetNext() {
 async function executeHardReset() {
   // Step 1: Write the hard-reset sentinel to the main storage key
   // initApp() will see this on reload and start with empty employees
-  const _pfKey = Object.keys(localStorage).find(k => k.endsWith('_pf_v3')) || 'rads_pf_v3';
+  const _pfKey = Object.keys(localStorage).find(k => k.endsWith('_pf_v3') && !k.startsWith('pf_cloud_url_')) || 'rads_pf_v3';
   localStorage.setItem(_pfKey, JSON.stringify({__hardReset: true}));
 
   // Step 2: Clear all other ancillary keys + cloud
@@ -8895,20 +8895,31 @@ const CLOUD_KEY = 'pf_cloud_url_rads_pf_v3';  // localStorage key that holds the
 
 // Default cloud URL — pre-configured so anyone opening this file
 // automatically connects without manual setup
-const DEFAULT_CLOUD_URL = 'https://script.google.com/macros/s/AKfycbxENZ62Zo2fU_230N6_o7gp5qnR8ss3J9H5LbNZ_QwzO08Ho2yaY-SBBOCthehtYmbO/exec';
-let _cloudUrl = localStorage.getItem(CLOUD_KEY) || DEFAULT_CLOUD_URL;
-let _cloudEnabled = !!_cloudUrl;
-// Persist the default on first run so it sticks
-if (!localStorage.getItem(CLOUD_KEY) && DEFAULT_CLOUD_URL) {
-  localStorage.setItem(CLOUD_KEY, DEFAULT_CLOUD_URL);
+const DEFAULT_CLOUD_URL = 'https://script.google.com/macros/s/AKfycbxBvHt3JY9eUAcQ7ozp2fptoolnRVGwrxtHIE-BIDCuA7DhqcRizdrh_GbvjVNo3S-K/exec';
+// Always validate stored URL — must start with https:// to be valid
+function _getValidCloudUrl() {
+  const stored = localStorage.getItem(CLOUD_KEY) || '';
+  if (stored.startsWith('https://')) return stored;
+  // Stored value is corrupted or missing — restore the default
+  if (stored && !stored.startsWith('https://')) {
+    console.warn('Cloud URL was corrupted, restoring default:', stored.slice(0,50));
+    localStorage.removeItem(CLOUD_KEY);
+  }
+  return DEFAULT_CLOUD_URL;
 }
+let _cloudUrl = _getValidCloudUrl();
+let _cloudEnabled = !!_cloudUrl;
+// Always persist a valid URL to localStorage
+if (DEFAULT_CLOUD_URL) localStorage.setItem(CLOUD_KEY, _cloudUrl);
 let _syncInProgress = false;
 let _pendingSync = false;
 
 // Called once on page load — prompts for URL if not set
 function initCloud() {
-  _cloudUrl = localStorage.getItem(CLOUD_KEY) || DEFAULT_CLOUD_URL;
+  _cloudUrl = _getValidCloudUrl();
   _cloudEnabled = !!_cloudUrl;
+  // Always ensure valid URL is persisted
+  if (_cloudUrl) localStorage.setItem(CLOUD_KEY, _cloudUrl);
   updateCloudIndicator();
 }
 
@@ -8937,6 +8948,7 @@ function openCloudConfig() {
   if (url === null) return; // cancelled
   const trimmed = url.trim();
   if (trimmed) {
+    if (!trimmed.startsWith('https://')) { alert('Please enter a valid https:// URL'); return; }
     localStorage.setItem(CLOUD_KEY, trimmed);
     _cloudUrl = trimmed;
     _cloudEnabled = true;
