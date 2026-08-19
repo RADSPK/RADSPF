@@ -2393,7 +2393,7 @@ async function initApp() {
   }
 }
 
-function persistState() {
+async function persistState() {
   const histCodes = new Set(HIST.employees.map(e => e.code));
   const histMonthsSet = new Set(HIST.months);
   const currentCodes = new Set(S.employees.map(e => e.code));
@@ -2452,7 +2452,7 @@ function persistState() {
 
   localStorage.setItem('rads_pf_v3', JSON.stringify(out));
   // Also sync to Google Sheets cloud
-  cloudSaveBulk({
+  await cloudSaveBulk({
     'rads_pf_v3': JSON.stringify({...out, _fullEmployees: S.employees, _savedAt: new Date().toISOString()}),
     'rads_elig_overrides': localStorage.getItem('rads_elig_overrides') || '{}',
     'rads_audit_log': localStorage.getItem('rads_audit_log') || '[]',
@@ -3081,7 +3081,7 @@ function saveEmpForm() {
     S.employees.push(newEmp);
     toast(`Added ${name} (${code}) to active employees`);
   }
-  persistState();
+  persistState().catch(e=>console.warn('persist error',e));
   closeM('empFormModal');
   renderEmps();
 }
@@ -3091,7 +3091,7 @@ function reactivateEmp(code) {
   const emp = S.employees.find(e => e.code===code);
   if (!emp) return;
   emp.leaving = '';
-  persistState();
+  persistState().catch(e=>console.warn('persist error',e));
   toast(`${emp.name} reactivated`);
   renderEmps();
 }
@@ -3230,7 +3230,7 @@ function saveMonthContrib() {
     if (!e.months[ms]) e.months[ms] = {contribution:0,profit:0,withdrawal:0};
     e.months[ms].contribution = v;
   });
-  persistState();
+  persistState().catch(e=>console.warn('persist error',e));
   closeM('monthModal');
   toast(`Contributions saved for ${ms}`);
   renderMonthHist();
@@ -3394,7 +3394,7 @@ function saveDist() {
     if (!x.emp.months[ms]) x.emp.months[ms] = {contribution:0,profit:0,withdrawal:0};
     x.emp.months[ms].profit = share;  // overwrite, not accumulate
   });
-  persistState();
+  persistState().catch(e=>console.warn('persist error',e));
   document.getElementById('pAmt').value = '';
   calcDist();
   toast(`Distributed ${PKRs(amount)} for ${ms} based on prior month's closing balance`);
@@ -3410,7 +3410,7 @@ function saveSeparateDist(code) {
   const ms = getMonthStr(m, y);
   if (!emp.months[ms]) emp.months[ms] = {contribution:0,profit:0,withdrawal:0};
   emp.months[ms].profit = amount;  // overwrite, not accumulate
-  persistState();
+  persistState().catch(e=>console.warn('persist error',e));
   document.getElementById('aAmt_'+code).value = '';
   document.getElementById('sepBal_'+code).textContent = PKR(totalBal(emp));
   toast(`${emp.name}: ${PKRs(amount)} applied for ${ms} (previous entry replaced)`);
@@ -3563,7 +3563,7 @@ function saveWd() {
   const emp = S.employees.find(e=>e.code===code);
   if (!emp.months[month]) emp.months[month]={contribution:0,profit:0,withdrawal:0};
   emp.months[month].withdrawal = (emp.months[month].withdrawal||0) + amt;
-  persistState();
+  persistState().catch(e=>console.warn('persist error',e));
   closeM('wdModal');
   toast(`Withdrawal of ${PKR(amt)} recorded — ${emp.name}`);
   renderWd();
@@ -4498,7 +4498,7 @@ function confirmExcelImport() {
     emp.months[row.month].withdrawal = row.withdrawal;
     count++;
   });
-  persistState();
+  persistState().catch(e=>console.warn('persist error',e));
   // Force immediate cloud sync so imported data isn't overwritten on next load
   if (_cloudEnabled) {
     try {
@@ -4654,7 +4654,7 @@ function saveEditMonth() {
   emp.months[ms].contribution = c;
   emp.months[ms].profit = p;
   emp.months[ms].withdrawal = w;
-  persistState();
+  persistState().catch(e=>console.warn('persist error',e));
   toast(`${emp.name} — ${ms} updated`);
   renderEditMonthFields();
   renderDash();
@@ -5537,7 +5537,7 @@ function applyPayrollContribs() {
     applied++;
   });
   if (applied) {
-    persistState();
+    persistState().catch(e=>console.warn('persist error',e));
     toast(`Payroll contributions applied for ${applied} employees`);
     nav('monthly');
   } else {
@@ -7263,7 +7263,7 @@ function confirmSettlement() {
     }
   }
 
-  persistState();
+  persistState().catch(e=>console.warn('persist error',e));
   closeM('inactiveModal');
 
   const _lapsedAmt = !_sfElig.eligible ? calcLapsedAmount(emp) : 0;
@@ -7279,7 +7279,7 @@ function confirmMarkInactive() {
   const emp    = S.employees.find(e=>e.code===code);
   if (!emp || !dateISO) return;
   emp.leaving  = isoToDDMonYY(dateISO);
-  persistState();
+  persistState().catch(e=>console.warn('persist error',e));
   closeM('inactiveModal');
   toast(`${emp.name} marked inactive`);
   renderEmps();
@@ -8262,7 +8262,7 @@ function confirmUVBDisposal() {
       allocations: allocations.map(a=>({code:a.emp.code, name:a.emp.name, amt:a.amt}))});
 
     saveUVB(entries);
-    persistState();
+    persistState().catch(e=>console.warn('persist error',e));
     closeM('uvbDisposalModal');
     renderUVB();
     renderDash();
@@ -8301,7 +8301,7 @@ function confirmUVBDisposal() {
     entry.disposalNote = ref;
 
     saveUVB(entries);
-    persistState();
+    persistState().catch(e=>console.warn('persist error',e));
     closeM('uvbDisposalModal');
     renderUVB();
     renderDash();
@@ -8622,7 +8622,7 @@ function saveLedgerEdits(code) {
     `Ledger edit: ${changes.length} change${changes.length>1?'s':''} — ${changes.slice(0,3).join('; ')}${changes.length>3?'…':''}`
   );
 
-  persistState();
+  persistState().catch(e=>console.warn('persist error',e));
   _ledgerEditMode = false;
 
   // Reset button appearance
@@ -8957,10 +8957,20 @@ function openCloudConfig() {
 }
 
 // Load ALL keys from cloud → write to localStorage → initApp reads localStorage
+// ═══════════════════════════════════════════════════════════
+// ROBUST REAL-TIME CLOUD SYNC
+// ═══════════════════════════════════════════════════════════
+
+let _syncRetryQueue = [];   // failed saves waiting to retry
+let _syncInFlight   = false;
+let _lastSaveData   = null; // most recent payload (deduplication)
+
+// Load from cloud — newer cloud data wins over local cache
 async function loadFromCloud() {
   if (!_cloudEnabled) return;
   try {
-    const res = await fetch(_cloudUrl, { method:'GET' });
+    const res = await fetch(_cloudUrl + '?t=' + Date.now(), { method:'GET' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
     const json = await res.json();
     if (json.success && json.data) {
       Object.entries(json.data).forEach(([k, v]) => {
@@ -8968,54 +8978,95 @@ async function loadFromCloud() {
       });
     }
   } catch(err) {
-    console.warn('Cloud load failed, using local cache:', err);
+    console.warn('Cloud load failed — using local cache:', err);
   }
 }
 
-// Save a single key to cloud (debounced — waits 800ms before firing)
-let _saveTimer = null;
-function cloudSave(key, value) {
-  if (!_cloudEnabled) return;
-  clearTimeout(_saveTimer);
-  _saveTimer = setTimeout(async () => {
-    try {
-      setSyncIndicator('saving');
-      await fetch(_cloudUrl, {
-        method: 'POST',
-        body: JSON.stringify({ key, value }),
-        headers: { 'Content-Type': 'text/plain' }
-      });
-      setSyncIndicator('saved');
-    } catch(err) {
-      setSyncIndicator('error');
-      console.warn('Cloud save failed:', err);
-    }
-  }, 800);
+// Core save — POST to Apps Script, returns true/false
+async function _doCloudPost(payload) {
+  const res = await fetch(_cloudUrl, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    headers: { 'Content-Type': 'text/plain' }
+  });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const j = await res.json();
+  if (!j.success) throw new Error(j.error || 'Unknown error');
+  return true;
 }
 
-// Bulk save — sends all keys at once (used by persistState)
+// Main save — awaited by persistState so nothing proceeds until saved
 async function cloudSaveBulk(data) {
   if (!_cloudEnabled) return;
+  _lastSaveData = data;
+  setSyncIndicator('saving');
   try {
-    setSyncIndicator('saving');
-    await fetch(_cloudUrl, {
-      method: 'POST',
-      body: JSON.stringify({ data }),
-      headers: { 'Content-Type': 'text/plain' }
-    });
+    await _doCloudPost({ data });
     setSyncIndicator('saved');
+    // Flush retry queue after a successful save
+    if (_syncRetryQueue.length) _flushRetryQueue();
   } catch(err) {
     setSyncIndicator('error');
-    console.warn('Cloud save failed:', err);
+    console.warn('Cloud save failed — queued for retry:', err.message);
+    // Queue this payload for retry
+    _syncRetryQueue.push({ data, ts: Date.now() });
+    // Show persistent error with retry count
+    const el = document.getElementById('cloudIndicator');
+    if (el) { el.innerHTML = '🔴 Sync failed (' + _syncRetryQueue.length + ' pending)'; el.style.color = 'var(--red)'; }
   }
 }
 
+// cloudSave (single key) — just delegate to bulk
+function cloudSave(key, value) {
+  if (!_cloudEnabled) return;
+  const data = { [key]: value };
+  cloudSaveBulk(data);
+}
+
+// Retry queue — runs every 15 seconds
+async function _flushRetryQueue() {
+  if (!_cloudEnabled || _syncInFlight || !_syncRetryQueue.length) return;
+  _syncInFlight = true;
+  try {
+    // Merge all queued payloads into one (latest wins per key)
+    const merged = {};
+    _syncRetryQueue.forEach(item => Object.assign(merged, item.data));
+    // Always include the very latest state
+    if (_lastSaveData) Object.assign(merged, _lastSaveData);
+    await _doCloudPost({ data: merged });
+    _syncRetryQueue = [];
+    setSyncIndicator('saved');
+    console.log('Retry queue flushed successfully');
+  } catch(err) {
+    console.warn('Retry flush failed:', err.message);
+    setSyncIndicator('error');
+  } finally {
+    _syncInFlight = false;
+  }
+}
+setInterval(_flushRetryQueue, 15000);  // retry every 15 seconds
+
+// sendBeacon fallback for when tab is closed mid-save
+// Browsers allow sendBeacon even as the page unloads
+window.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden' && _cloudEnabled && _lastSaveData) {
+    try {
+      const blob = new Blob([JSON.stringify({ data: _lastSaveData })], { type: 'text/plain' });
+      navigator.sendBeacon(_cloudUrl, blob);
+    } catch(e) {}
+  }
+});
+
+// Sync indicator
 function setSyncIndicator(state) {
   const el = document.getElementById('cloudIndicator');
   if (!el || !_cloudEnabled) return;
-  if (state === 'saving') { el.innerHTML = '🔄 Saving…'; el.style.color = 'var(--gold)'; }
-  if (state === 'saved')  { el.innerHTML = '🟢 Saved'; el.style.color = 'var(--green)'; setTimeout(() => { el.innerHTML = '🟢 Cloud'; }, 2000); }
-  if (state === 'error')  { el.innerHTML = '🔴 Sync error'; el.style.color = 'var(--red)'; }
+  if (state === 'saving') { el.innerHTML = '🔄 Saving…'; el.style.color = 'var(--gold)'; el.title = 'Syncing to Google Sheets…'; }
+  if (state === 'saved')  {
+    el.innerHTML = '🟢 Saved';  el.style.color = 'var(--green)'; el.title = 'All changes saved to Google Sheets';
+    setTimeout(() => { if (el.innerHTML === '🟢 Saved') { el.innerHTML = '🟢 Cloud'; el.title = 'Connected to Google Sheets'; } }, 2500);
+  }
+  if (state === 'error')  { el.innerHTML = '🔴 Sync error'; el.style.color = 'var(--red)'; el.title = 'Save failed — retrying every 15 seconds'; }
 }
 
 // ── Override the key storage functions to also sync to cloud ──
@@ -9329,7 +9380,7 @@ async function confirmDeleteEmployee() {
   S.employees = S.employees.filter(e => e.code !== code);
 
   auditLog('status', code, empName, `Employee record permanently deleted by ${currentUser.fullName} (@${currentUser.username})`);
-  persistState();
+  persistState().catch(e=>console.warn('persist error',e));
   closeM('deleteEmpModal');
   toast(`${empName}'s record has been permanently deleted`);
   renderEmps();
@@ -9389,7 +9440,7 @@ function reverseUVBDisposal(entryId, disposalIndex) {
   entry.disposalRef = (entry.disposalRef || '') + ` [REVERSED on ${new Date().toISOString().slice(0,10)} by ${currentUser.fullName}]`;
 
   saveUVB(entries);
-  persistState();
+  persistState().catch(e=>console.warn('persist error',e));
   renderUVB();
   renderDash();
   toast(`Disposal reversed — ${PKR(restoredAmount)} restored to Unvested Benefits Pool`);
@@ -9559,7 +9610,7 @@ function runBatchSettlement() {
   });
 
   if (processed > 0) {
-    persistState();
+    persistState().catch(e=>console.warn('persist error',e));
     localStorage.setItem(BATCH_SETTLE_KEY, '1');
     toast(`✓ Batch settlement complete: ${processed} employees settled · ${uvbCount} UVB entries created · ${skipped} skipped (already done or not found)`, 'ok');
     renderDash();
